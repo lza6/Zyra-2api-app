@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zyra 逆向 Demo — llmchat-22d7a 网关</title>
+<style>
+:root{--bg:#0f1117;--panel:#1a1d27;--line:#2a2e3d;--txt:#e4e6ef;--dim:#8b90a3;--acc:#7c5cff;--ok:#3ddc84;--err:#ff5c7c}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 "Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+header h1{font-size:17px}.tag{font-size:11px;color:var(--dim)}
+.tag b{color:var(--acc)}
+#chat{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:78%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-break:break-word}
+.msg.user{align-self:flex-end;background:var(--acc);color:#fff;border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.bot.pending{color:var(--dim);font-style:italic}
+footer{border-top:1px solid var(--line);padding:12px 20px;display:flex;gap:10px}
+#inp{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 14px;resize:none;font:inherit;outline:none}
+#inp:focus{border-color:var(--acc)}
+button{background:var(--acc);border:0;border-radius:8px;color:#fff;padding:10px 22px;cursor:pointer;font-weight:600}
+button:disabled{opacity:.5;cursor:wait}
+#meta{font-size:11px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Zyra 逆向 Demo</h1>
+  <span class="tag">上游 <b>us-central1-llmchat-22d7a.cloudfunctions.net/generate</b> · 鉴权 <b>QtcY6-KEY</b> · demo 端口 <b>8916</b> · <span id="meta">就绪</span></span>
+</header>
+<div id="chat"></div>
+<footer>
+  <textarea id="inp" rows="1" placeholder="输入消息… (Enter 发送, Shift+Enter 换行)"></textarea>
+  <button id="send">发送</button>
+</footer>
+<script>
+const chat = document.getElementById('chat'), inp = document.getElementById('inp'),
+      btn = document.getElementById('send'), meta = document.getElementById('meta');
+let history = [];   // {role:'user'|'assistant', content}
+
+function add(role, text){
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+  d.textContent = text;
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+
+async function send(){
+  const text = inp.value.trim();
+  if(!text || btn.disabled) return;
+  inp.value = ''; btn.disabled = true; meta.textContent = '思考中…';
+  add('user', text);
+  const pending = add('bot', '…');
+  history.push({role:'user', content:text});
+  const t0 = performance.now();
+  try{
+    const r = await fetch('/v1/generate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({messages: history})
+    });
+    const j = await r.json();
+    if(r.ok && j.success){
+      const out = j.output || '(空)';
+      pending.textContent = out;
+      history.push({role:'assistant', content:out});
+      meta.textContent = ((performance.now()-t0)/1000).toFixed(1) + 's';
+    }else{
+      pending.textContent = '✕ ' + (j.error || ('HTTP ' + r.status));
+      pending.style.borderColor = 'var(--err)';
+      meta.textContent = '失败 ' + r.status;
+      history.pop();
+    }
+  }catch(e){
+    pending.textContent = '✕ 网络错误: ' + e.message;
+    meta.textContent = '异常';
+    history.pop();
+  }
+  chat.scrollTop = chat.scrollHeight;
+  btn.disabled = false; inp.focus();
+}
+
+btn.onclick = send;
+inp.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+});
+inp.focus();
+</script>
+</body>
+</html>
